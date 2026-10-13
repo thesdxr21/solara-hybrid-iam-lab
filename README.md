@@ -44,7 +44,7 @@ Built on VMware Workstation Pro as part of my transition into Identity and Acces
 
 **Proof:**
 
-![VMnet8 configured as the lab network with DHCP disabled](screenshots/part-00/p0-01-vmnet8-lab-network.png)
+![VMnet8 configured as the lab network with DHCP disabled](screenshots/part-00/p0-vmnet8-lab-network.png)
 
 **Skills:** virtual networking, NAT, subnetting, DHCP/DNS fundamentals
 
