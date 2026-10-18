@@ -25,7 +25,7 @@ Built on VMware Workstation Pro as part of my transition into Identity and Acces
 
 - [x] Part 0 — Lab network
 - [x] Part 1 — Build the Windows VMs
-- [ ] Part 2 — Active Directory forest
+- [x] Part 2 — Active Directory forest
 - [ ] Part 3 — ADFS federation server
 - [ ] Part 4 — Tiered OU structure and logon restrictions
 - [ ] Part 5 — Users, groups and admin accounts
@@ -71,3 +71,30 @@ Built on VMware Workstation Pro as part of my transition into Identity and Acces
 **Skills:** Windows Server 2022, Windows 11, Sysprep and golden images, static IP configuration with PowerShell, Windows Firewall troubleshooting, VMware Workstation
 
 **Scripts:** [`scripts/part1-configure-network.ps1`](scripts/part1-configure-network.ps1)
+
+
+---
+
+## Part 2 — Active Directory forest
+
+**What I built:** Promoted DC01 to the first domain controller of a new forest, solara.lab (NetBIOS name SOLARALAB), with integrated DNS. I set DC01 as the authoritative time source for the domain and joined ADFS01, SYNC01 and CLIENT01 to the domain.
+
+**Why it matters:** Every later part of this lab depends on Active Directory. The forest is the security boundary, the domain holds the identities, and DNS is how every machine finds the domain controller. The PDC Emulator role keeps time for the whole domain, and Kerberos authentication fails when clocks drift more than 5 minutes apart, so the time source is set deliberately instead of left to chance.
+
+**Proof:**
+
+![Domain details and a clean dcdiag health check](screenshots/part-02/p2-01-forest-health.png)
+
+![ADFS01, SYNC01 and CLIENT01 joined to solara.lab in Active Directory Users and Computers](screenshots/part-02/p2-02-domain-members.png)
+
+![DC01 in the Domain Controllers OU](screenshots/part-02/p2-02-domain-members2.png)
+
+**Problems I hit and how I fixed them:**
+
+- **The external drive disconnected while DC01 was running.** All VMs live on an external SSD. When it dropped, DC01 crashed, and on reboot Windows ran a disk check. I let chkdsk finish, then confirmed the domain controller was healthy: the NTDS, DNS and Netlogon services were running, `ipconfig /registerdns` and a Netlogon restart re-registered its DNS records, and `dcdiag` passed. The remaining System Log errors came from the unexpected shutdown and cleared after an hour.
+- **The drive came back with a different letter.** VMware couldn't find the VMs on the old drive letter. I reopened each .vmx from the new location and chose "I Moved It" so each VM kept its identity (MAC address and UUID) and stayed recognized by the domain.
+- **VMs suspended on another PC wouldn't resume.** The saved state didn't match the new host's hardware, so I discarded the suspended state and did a clean boot. I also disconnected the CD/DVD drive from an ISO path that no longer existed.
+- **Time was coming from the local CMOS clock.** `w32tm /query /source` showed the domain controller wasn't syncing with an external source. I reconfigured it to use time.windows.com and confirmed the source changed.
+- **CLIENT01 failed to join ("domain could not be contacted").** DC01 was powered off. Without the domain controller there is no DNS for solara.lab and nothing to authenticate the join. After starting DC01 first, the join succeeded. Lesson: the domain controller is a dependency for everything, so it boots first.
+
+**Skills:** Active Directory Domain Services, forest and domain design, AD-integrated DNS, FSMO roles and Windows Time (w32tm), domain join, dcdiag health checks, disaster recovery after an unexpected shutdown
