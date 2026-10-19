@@ -26,7 +26,7 @@ Built on VMware Workstation Pro as part of my transition into Identity and Acces
 - [x] Part 0 — Lab network
 - [x] Part 1 — Build the Windows VMs
 - [x] Part 2 — Active Directory forest
-- [ ] Part 3 — ADFS federation server
+- [x] Part 3 — ADFS federation server
 - [ ] Part 4 — Tiered OU structure and logon restrictions
 - [ ] Part 5 — Users, groups and admin accounts
 - [ ] Part 6 — Salesforce federated to ADFS
@@ -98,3 +98,31 @@ Built on VMware Workstation Pro as part of my transition into Identity and Acces
 - **CLIENT01 failed to join ("domain could not be contacted").** DC01 was powered off. Without the domain controller there is no DNS for solara.lab and nothing to authenticate the join. After starting DC01 first, the join succeeded. Lesson: the domain controller is a dependency for everything, so it boots first.
 
 **Skills:** Active Directory Domain Services, forest and domain design, AD-integrated DNS, FSMO roles and Windows Time (w32tm), domain join, dcdiag health checks, disaster recovery after an unexpected shutdown
+
+
+---
+
+## Part 3 — ADFS federation server
+
+**What I built:** An enterprise certificate authority (Solara-Lab-Root-CA) on DC01, a TLS certificate for the federation service name sts.solara.lab, and a single-node ADFS farm on ADFS01 running under a group Managed Service Account (gMSA). I validated it from the domain-joined workstation with the federation metadata endpoint and an IdP-initiated sign-in.
+
+**Why it matters:** ADFS lets Active Directory users sign in to cloud apps without the app ever seeing their password. ADFS checks the password, then hands the app a signed token that says "this user is verified." Many enterprises still run their single sign-on this way, and migrating off ADFS to Microsoft Entra ID is a common IAM project, so I built it first to understand what I'll be migrating in Part 9. The certificate proves the ADFS server is who it claims to be, and the gMSA means no person ever knows the service account's password.
+
+**Proof:**
+
+![ADFS TLS certificate issued by the lab CA](screenshots/part-03/p3-01-adfs-cert-issued.png)
+
+![ADFS service communications, token-signing and token-decrypting certificates](screenshots/part-03/p3-02-adfs-certificates.png)
+
+![Successful IdP-initiated sign-in through ADFS from CLIENT01](screenshots/part-03/p3-03-adfs-signin-test.png)
+
+**Problems I hit and how I fixed them:**
+
+- **ADFS didn't start after a reboot.** AD FS Management failed with error ADMIN0017 because the ADFS service was stopped. Even though DC01 was powered on first, ADFS01 booted before the domain controller was ready, so the service couldn't retrieve its gMSA password and gave up. I started the service manually, then set it to Automatic (Delayed Start) with automatic restart on failure so it recovers on its own. Lesson: a server being powered on isn't the same as its services being ready.
+
+**Security notes:**
+
+- The token-signing private key is the most sensitive secret in ADFS. Anyone who steals it can forge a sign-in as any user (the "Golden SAML" attack used in the SolarWinds breach), which is why ADFS servers are treated as Tier 0, the same as domain controllers.
+- The CA runs on the domain controller as a lab shortcut. Production uses an offline root CA plus a separate issuing CA.
+
+**Skills:** Active Directory Federation Services, SAML federation concepts, PKI and Active Directory Certificate Services, certificate templates, gMSA service accounts, DNS records for federation, Windows service recovery configuration
