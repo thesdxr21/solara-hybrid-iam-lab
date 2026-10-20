@@ -27,7 +27,7 @@ Built on VMware Workstation Pro as part of my transition into Identity and Acces
 - [x] Part 1 — Build the Windows VMs
 - [x] Part 2 — Active Directory forest
 - [x] Part 3 — ADFS federation server
-- [ ] Part 4 — Tiered OU structure and logon restrictions
+- [x] Part 4 — Tiered OU structure and logon restrictions
 - [ ] Part 5 — Users, groups and admin accounts
 - [ ] Part 6 — Salesforce federated to ADFS
 - [ ] Part 7 — Cloud IdP readiness
@@ -126,3 +126,52 @@ Built on VMware Workstation Pro as part of my transition into Identity and Acces
 - The CA runs on the domain controller as a lab shortcut. Production uses an offline root CA plus a separate issuing CA.
 
 **Skills:** Active Directory Federation Services, SAML federation concepts, PKI and Active Directory Certificate Services, certificate templates, gMSA service accounts, DNS records for federation, Windows service recovery configuration
+
+---
+
+## Part 4 — Tiered OU structure and logon restrictions
+
+**What I built:** An Active Directory OU structure based on Microsoft's tiered administration model, with Tier 0 (identity infrastructure), Tier 1 (servers) and Tier 2 (workstations), each with its own admin accounts, groups and service accounts. I enforced the tiers with deny-logon Group Policy Objects, gave Tier 2 admins local admin rights on workstations only, and redirected newly joined computers to a Quarantine OU.
+
+**Why it matters:** When an admin signs in to a computer, their credentials stay in memory, and an attacker who compromises that computer can steal them (pass-the-hash, Mimikatz). Most attacks start on a workstation and wait for a powerful admin to sign in. Tiering breaks that chain: Domain Admin credentials are never allowed on workstations, so there's nothing for an attacker there to steal. It's the on-prem version of least privilege.
+
+| Tier | What's in it | Who can sign in |
+| --- | --- | --- |
+| Tier 0 | DC01, ADFS01, SYNC01, the certificate authority | Tier 0 admins only |
+| Tier 1 | Business servers | Tier 1 admins only |
+| Tier 2 | Workstations (CLIENT01) | Tier 2 admins and standard users |
+
+ADFS and the sync server are Tier 0 because whoever controls them can forge sign-ins or change cloud identities.
+
+**Group Policy design:**
+
+| GPO | Linked to | What it does |
+| --- | --- | --- |
+| GPO-Deny-T0-On-Lower | Workstations, Tier1-Servers | Blocks Tier 0 and Domain Admins from lower tiers |
+| GPO-Deny-Lower-On-T0 | Tier 0 Servers, Domain Controllers | Blocks Tier 1 and Tier 2 admins from Tier 0 |
+| GPO-Deny-T2-On-T1 | Tier1-Servers | Blocks Tier 2 admins from servers |
+| GPO-Deny-T1-On-T2 | Workstations | Blocks Tier 1 admins from workstations |
+| GPO-Workstation-LocalAdmins | Workstations | Adds Tier2-Admins to local Administrators (Group Policy Preferences, Update action) |
+
+Each deny GPO sets three user rights: Deny log on locally, Deny log on through Remote Desktop Services, and Deny log on as a batch job.
+
+**Proof:**
+
+![Tiered OU structure in Active Directory Users and Computers](screenshots/part-04/p4-01-tiered-ou-tree.png)
+
+![Tiered OU structure, expanded view](screenshots/part-04/p4-01-tiered-ou-tree2.png)
+
+![GPOs linked to the Workstations OU](screenshots/part-04/p4-02-gpo-links.png)
+
+![GPOs linked to the Tier 0 and Tier 1 OUs](screenshots/part-04/p4-02-gpo-links2.png)
+
+![Domain Administrator denied sign-in on the Tier 2 workstation](screenshots/part-04/p4-03-tier0-logon-denied.png)
+
+**Problems I hit and how I fixed them:**
+
+- **The external drive disconnected again mid-session.** VMware paused DC01 with a disk error. Retry resumed it at first, but the VM later shut down. After rebooting, I verified the NTDS, DNS and Netlogon services, re-registered DNS with `ipconfig /registerdns`, and confirmed my Part 4 OUs and computer moves had persisted.
+- **SYSVOL permissions were out of sync after the crash.** Group Policy Management reported that a GPO's SYSVOL permissions didn't match Active Directory. I let it resync SYSVOL to match AD, which is the source of truth.
+- **Checked SYSVOL replication health.** DFS Replication logged a dirty-shutdown warning (event 2212), then recovered on its own (event 2214). I confirmed the SYSVOL and NETLOGON shares were up so Group Policy could apply.
+- **Prevented a repeat.** I disabled USB power saving on the host so the external drive stays connected.
+
+**Skills:** Active Directory OU design, tiered administration model, Group Policy (User Rights Assignment, Group Policy Preferences), privileged access management concepts, credential theft mitigation, SYSVOL and DFSR troubleshooting, PowerShell automation
